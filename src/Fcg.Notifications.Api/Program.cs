@@ -1,22 +1,15 @@
 using Fcg.Notifications.Consumers;
+using Fcg.Notifications.Idempotency;
 using MassTransit;
-using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Config do RabbitMQ (reutilizada pela mensageria e pelo health check).
-var rabbitHost = builder.Configuration["RabbitMq:Host"] ?? "localhost";
-var rabbitUser = builder.Configuration["RabbitMq:Username"] ?? "guest";
-var rabbitPass = builder.Configuration["RabbitMq:Password"] ?? "guest";
+builder.Services.AddHealthChecks();
 
-builder.Services.AddHealthChecks()
-    .AddRabbitMQ(sp => new ConnectionFactory
-    {
-        HostName = rabbitHost,
-        UserName = rabbitUser,
-        Password = rabbitPass,
-        Port = 5672
-    }.CreateConnectionAsync(), name: "rabbitmq", tags: ["ready"]);
+// Store de idempotência dos consumers (dedup por chave natural do evento).
+// Em memória por enquanto; a versão durável (MongoDB, índice único) virá com a
+// issue de persistência.
+builder.Services.AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
 
 builder.Services.AddMassTransit(x =>
 {
@@ -27,22 +20,15 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<PaymentProcessedConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
-        cfg.Host(rabbitHost, "/", h => { h.Username(rabbitUser); h.Password(rabbitPass); });
+        var host = builder.Configuration["RabbitMq:Host"] ?? "localhost";
+        var user = builder.Configuration["RabbitMq:Username"] ?? "guest";
+        var pass = builder.Configuration["RabbitMq:Password"] ?? "guest";
+        cfg.Host(host, "/", h => { h.Username(user); h.Password(pass); });
         cfg.ConfigureEndpoints(ctx);
     });
 });
 
 var app = builder.Build();
-
-
-app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
-{
-    Predicate = _ => false
-});
-app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
-{
-    Predicate = check => check.Tags.Contains("ready")
-});
 
 app.MapHealthChecks("/health");
 
