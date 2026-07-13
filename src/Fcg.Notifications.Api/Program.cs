@@ -3,15 +3,9 @@ using Fcg.Notifications.Email;
 using Fcg.Notifications.Idempotency;
 using Fcg.Notifications.Persistence;
 using MassTransit;
-using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
-using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 
-// O driver 3.x não assume representação de Guid — sem isso, serializar payloads
-// com Guid (ex.: OrderId do PaymentProcessedEvent) falha com
-// "GuidRepresentation is Unspecified". Padrão UUID (Standard) é o recomendado.
-BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
+BsonConfig.EnsureGuidSerialization();
 
 var builder = WebApplication.CreateBuilder(args);
 
