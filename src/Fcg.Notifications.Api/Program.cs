@@ -1,5 +1,6 @@
 using System.Globalization;
 using Fcg.Notifications.Consumers;
+using Fcg.Notifications.Idempotency;
 using MassTransit;
 using RabbitMQ.Client;
 
@@ -60,6 +61,11 @@ builder.Services.AddHealthChecks()
         },
         name: "rabbitmq",
         tags: ["ready"]);
+
+// Store de idempotência dos consumers (dedup por chave natural do evento).
+// Em memória por enquanto; a versão durável (MongoDB, índice único) virá com a
+// issue de persistência.
+builder.Services.AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
 
 builder.Services.AddMassTransit(x =>
 {
