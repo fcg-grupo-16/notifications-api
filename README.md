@@ -54,7 +54,7 @@ Os contratos vivem em `src/Fcg.Notifications.Api/Contracts/Events.cs`, no namesp
 ## 2. Stack
 
 - **.NET 10** (`net10.0`)
-- **ASP.NET Core** (minimal hosting) — projeto único que hospeda os consumers e expõe apenas `/health`
+- **ASP.NET Core** (minimal hosting) — projeto único que hospeda os consumers e expõe os health checks (`/health/live`, `/health/ready` e o agregado legado `/health`)
 - **MassTransit 8.x** + **RabbitMQ** (mensageria pub/sub)
 - **xUnit** + **FluentAssertions** (testes de unidade)
 - **Sem banco de dados** — o serviço é stateless
@@ -153,12 +153,13 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
    dotnet run --project src/Fcg.Notifications.Api
    ```
 
-   O serviço escuta em `http://localhost:8080` e expõe o health check em `/health`. Se o RabbitMQ não estiver em `localhost`, defina `RabbitMq__Host` antes de rodar.
+   O serviço escuta em `http://localhost:8080`. Health checks: `/health/live` (liveness — só o processo, sem dependências), `/health/ready` (readiness — inclui a checagem do RabbitMQ) e `/health` (agregado legado). Se o RabbitMQ não estiver em `localhost`, defina `RabbitMq__Host` antes de rodar.
 
 3. **Verifique a saúde:**
 
    ```bash
-   curl http://localhost:8080/health
+   curl http://localhost:8080/health/live    # processo de pé
+   curl http://localhost:8080/health/ready   # pronto para consumir (RabbitMQ acessível)
    ```
 
 4. **Veja os e-mails simulados.** Quando um `UserCreatedEvent` ou `PaymentProcessedEvent` chegar, o console exibirá linhas como:
