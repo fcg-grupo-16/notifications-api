@@ -8,7 +8,7 @@ Microsserviço de notificações da plataforma **FIAP Cloud Games (FCG) — Fase
 
 ## 1. Visão geral
 
-O NotificationsAPI não tem interface própria nem banco de dados. Ele apenas **escuta eventos** publicados por outros microsserviços do FCG via RabbitMQ e reage a eles. O "envio" de e-mail é **simulado**: em vez de disparar um e-mail real, a mensagem é gravada no log do console (`ILogger`). Isso é suficiente para a Fase 2 e fácil de auditar.
+O NotificationsAPI não tem interface própria. Ele **escuta eventos** publicados por outros microsserviços do FCG via RabbitMQ e reage a eles. O "envio" de e-mail é **simulado** (via `IEmailSender` plugável): em vez de disparar um e-mail real, a mensagem é gravada no log do console. Cada notificação enviada é **persistida** em MongoDB (`notificationsdb`, coleção `notifications`) para auditoria/relatórios, consultável em `GET /api/v1/notificacoes`.
 
 Há **dois consumidores** (consumers):
 
@@ -56,8 +56,8 @@ Os contratos vivem em `src/Fcg.Notifications.Api/Contracts/Events.cs`, no namesp
 - **.NET 10** (`net10.0`)
 - **ASP.NET Core** (minimal hosting) — projeto único que hospeda os consumers e expõe os health checks (`/health/live`, `/health/ready` e o agregado legado `/health`)
 - **MassTransit 8.x** + **RabbitMQ** (mensageria pub/sub)
-- **xUnit** + **FluentAssertions** (testes de unidade)
-- **Sem banco de dados** — o serviço é stateless
+- **MongoDB** (`notificationsdb`) — histórico de notificações enviadas (auditoria/relatórios)
+- **xUnit** + **FluentAssertions** (testes de unidade + MassTransit Test Harness)
 
 ---
 
@@ -135,6 +135,8 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
 | `RabbitMq__Host` | Host do RabbitMQ | `localhost` |
 | `RabbitMq__Username` | Usuário do RabbitMQ | `guest` |
 | `RabbitMq__Password` | Senha do RabbitMQ | `guest` |
+| `MongoDbSettings__ConnectionString` | Connection string do MongoDB (com `?replicaSet=rs0`) | `mongodb://localhost:27017/?replicaSet=rs0` |
+| `MongoDbSettings__DatabaseName` | Database do histórico de notificações | `notificationsdb` |
 | `RabbitMq__ImmediateRetryCount` | Nº de tentativas do retry imediato (exponencial) nos consumers | `3` |
 | `RabbitMq__DelayedRedeliverySeconds` | Intervalos (s, separados por vírgula) do delayed redelivery | `60,300,900` |
 | `ASPNETCORE_ENVIRONMENT` | Ambiente de execução (`Development` / `Production`) | — |
@@ -156,13 +158,13 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
    dotnet run --project src/Fcg.Notifications.Api
    ```
 
-   O serviço escuta em `http://localhost:8080`. Health checks: `/health/live` (liveness — só o processo, sem dependências), `/health/ready` (readiness — inclui a checagem do RabbitMQ) e `/health` (agregado legado). Se o RabbitMQ não estiver em `localhost`, defina `RabbitMq__Host` antes de rodar.
+   O serviço escuta em `http://localhost:8080`. Health checks: `/health/live` (liveness — só o processo, sem dependências), `/health/ready` (readiness — inclui as checagens do RabbitMQ e do MongoDB) e `/health` (agregado legado). Se o RabbitMQ/MongoDB não estiverem em `localhost`, defina `RabbitMq__Host`/`MongoDbSettings__ConnectionString` antes de rodar.
 
 3. **Verifique a saúde:**
 
    ```bash
    curl http://localhost:8080/health/live    # processo de pé
-   curl http://localhost:8080/health/ready   # pronto para consumir (RabbitMQ acessível)
+   curl http://localhost:8080/health/ready   # pronto para consumir (RabbitMQ + MongoDB acessíveis)
    ```
 
 4. **Veja os e-mails simulados.** Quando um `UserCreatedEvent` ou `PaymentProcessedEvent` chegar, o console exibirá linhas como:
