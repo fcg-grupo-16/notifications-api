@@ -1,5 +1,6 @@
 using System.Globalization;
 using Fcg.Notifications.Consumers;
+using Fcg.Notifications.Email;
 using Fcg.Notifications.Idempotency;
 using MassTransit;
 using RabbitMQ.Client;
@@ -66,6 +67,10 @@ builder.Services.AddHealthChecks()
 // Em memória por enquanto; a versão durável (MongoDB, índice único) virá com a
 // issue de persistência.
 builder.Services.AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
+
+// Envio de e-mail plugável. Hoje um sender que só registra no log (simulação);
+// trocável por SMTP/provedor real via DI, sem tocar nos consumers.
+builder.Services.AddSingleton<IEmailSender, LoggingEmailSender>();
 
 builder.Services.AddMassTransit(x =>
 {
