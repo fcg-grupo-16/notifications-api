@@ -1,0 +1,12 @@
+Compra confirmada — FIAP Cloud Games
+Olá!
+
+Seu pagamento foi aprovado e o jogo já está na sua biblioteca:
+
+  Jogo: {{GameId}}
+  Valor: {{Price}}
+  Pedido: {{OrderId}}
+
+Bom jogo!
+
+— Equipe FCG

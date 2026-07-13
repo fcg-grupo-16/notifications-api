@@ -127,6 +127,10 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
 | `RabbitMq__Password` | Senha do RabbitMQ | `guest` |
 | `MongoDb__ConnectionString` | Connection string do MongoDB (histórico + idempotência) | `mongodb://localhost:27017` |
 | `MongoDb__Database` | Nome do database de notificações | `notifications` |
+| `Email__Provider` | Canal de envio: `Console` (loga no console) ou `Smtp` (MailKit) | `Console` |
+| `Email__Smtp__Host` / `Email__Smtp__Port` | Servidor SMTP (usado só com `Provider=Smtp`) | — / `587` |
+| `Email__Smtp__User` / `Email__Smtp__Password` | Credenciais SMTP (via Secret — nunca commitadas) | — |
+| `Email__Smtp__From` | Remetente dos e-mails | `noreply@fcg.com` |
 | `ASPNETCORE_ENVIRONMENT` | Ambiente de execução (`Development` / `Production`) | — |
 | `ASPNETCORE_URLS` | URLs de escuta (definida no Dockerfile) | `http://+:8080` |
 

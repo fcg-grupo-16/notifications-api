@@ -1,0 +1,7 @@
+Bem-vindo(a) à FIAP Cloud Games!
+Olá, {{Nome}}!
+
+Sua conta ({{Email}}) foi criada com sucesso na FIAP Cloud Games.
+Explore o catálogo e boas partidas!
+
+— Equipe FCG

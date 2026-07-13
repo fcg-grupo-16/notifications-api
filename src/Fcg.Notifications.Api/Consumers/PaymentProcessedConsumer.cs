@@ -9,8 +9,8 @@ namespace Fcg.Notifications.Consumers;
 
 /// <summary>
 /// Consome <see cref="PaymentProcessedEvent"/>. Se o pagamento foi aprovado,
-/// simula o envio de um e-mail de confirmação de compra registrando a mensagem
-/// no console; caso contrário, registra que nenhum e-mail será enviado.
+/// envia o e-mail de confirmação pelo <see cref="IEmailSender"/> configurado;
+/// caso contrário, registra que nenhum e-mail será enviado.
 /// Idempotente por <c>OrderId</c> no caminho aprovado: reentregas do mesmo
 /// evento não geram confirmação duplicada. Cada desfecho é persistido como
 /// <see cref="NotificationRecord"/> para auditoria ("Sent" ou "Skipped").
@@ -20,22 +20,28 @@ public sealed class PaymentProcessedConsumer : IConsumer<PaymentProcessedEvent>
     private readonly ILogger<PaymentProcessedConsumer> _logger;
     private readonly IProcessedMessageStore _store;
     private readonly INotificationRepository _repository;
+    private readonly ITemplateRenderer _renderer;
+    private readonly IEmailSender _sender;
 
     public PaymentProcessedConsumer(
         ILogger<PaymentProcessedConsumer> logger,
         IProcessedMessageStore store,
-        INotificationRepository repository)
+        INotificationRepository repository,
+        ITemplateRenderer renderer,
+        IEmailSender sender)
     {
         _logger = logger;
         _store = store;
         _repository = repository;
+        _renderer = renderer;
+        _sender = sender;
     }
 
     public async Task Consume(ConsumeContext<PaymentProcessedEvent> context)
     {
-        var confirmation = EmailMessageBuilder.BuildPurchaseConfirmationMessage(context.Message);
+        var email = _renderer.RenderPurchaseConfirmation(context.Message);
 
-        if (confirmation is not null)
+        if (email is not null)
         {
             // A chave só é consumida no caminho APROVADO: um evento "Rejected" não
             // marca o OrderId como processado, para não bloquear a confirmação
@@ -51,7 +57,7 @@ public sealed class PaymentProcessedConsumer : IConsumer<PaymentProcessedEvent>
                 return;
             }
 
-            _logger.LogInformation("{Message}", confirmation);
+            await _sender.SendAsync(email, context.CancellationToken);
             await SalvarHistoricoAsync(context, "Sent");
         }
         else

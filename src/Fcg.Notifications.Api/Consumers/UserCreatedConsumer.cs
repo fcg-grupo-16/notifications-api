@@ -8,8 +8,8 @@ using MongoDB.Bson;
 namespace Fcg.Notifications.Consumers;
 
 /// <summary>
-/// Consome <see cref="UserCreatedEvent"/> e simula o envio de um e-mail de
-/// boas-vindas registrando a mensagem no console. Idempotente por
+/// Consome <see cref="UserCreatedEvent"/> e envia o e-mail de boas-vindas pelo
+/// <see cref="IEmailSender"/> configurado (Console por default). Idempotente por
 /// <c>UserId</c>: reentregas do mesmo evento não geram e-mail duplicado.
 /// Cada envio é persistido como <see cref="NotificationRecord"/> para auditoria.
 /// </summary>
@@ -18,15 +18,21 @@ public sealed class UserCreatedConsumer : IConsumer<UserCreatedEvent>
     private readonly ILogger<UserCreatedConsumer> _logger;
     private readonly IProcessedMessageStore _store;
     private readonly INotificationRepository _repository;
+    private readonly ITemplateRenderer _renderer;
+    private readonly IEmailSender _sender;
 
     public UserCreatedConsumer(
         ILogger<UserCreatedConsumer> logger,
         IProcessedMessageStore store,
-        INotificationRepository repository)
+        INotificationRepository repository,
+        ITemplateRenderer renderer,
+        IEmailSender sender)
     {
         _logger = logger;
         _store = store;
         _repository = repository;
+        _renderer = renderer;
+        _sender = sender;
     }
 
     public async Task Consume(ConsumeContext<UserCreatedEvent> context)
@@ -42,8 +48,8 @@ public sealed class UserCreatedConsumer : IConsumer<UserCreatedEvent>
             return;
         }
 
-        var message = EmailMessageBuilder.BuildWelcomeMessage(context.Message);
-        _logger.LogInformation("{Message}", message);
+        var email = _renderer.RenderWelcome(context.Message);
+        await _sender.SendAsync(email, context.CancellationToken);
 
         await SalvarHistoricoAsync(context);
     }

@@ -1,4 +1,5 @@
 using Fcg.Notifications.Consumers;
+using Fcg.Notifications.Email;
 using Fcg.Notifications.Idempotency;
 using Fcg.Notifications.Persistence;
 using MassTransit;
@@ -33,6 +34,21 @@ builder.Services.AddSingleton<INotificationRepository, NotificationRepository>()
 // (InMemoryProcessedMessageStore) permanece disponível para testes.
 builder.Services.AddSingleton<MongoProcessedMessageStore>();
 builder.Services.AddSingleton<IProcessedMessageStore>(sp => sp.GetRequiredService<MongoProcessedMessageStore>());
+
+// Canal de e-mail plugável: o conteúdo vem de templates (ITemplateRenderer) e o
+// envio da abstração IEmailSender — Console (default, loga "[E-mail] ...") ou
+// SMTP real (MailKit), selecionável por Email__Provider sem tocar nos consumers.
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddSingleton<ITemplateRenderer, TemplateRenderer>();
+switch ((builder.Configuration["Email:Provider"] ?? "Console").ToLowerInvariant())
+{
+    case "smtp":
+        builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        break;
+    default:
+        builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
+        break;
+}
 
 builder.Services.AddMassTransit(x =>
 {
