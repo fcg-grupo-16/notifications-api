@@ -1,15 +1,38 @@
 using Fcg.Notifications.Consumers;
 using Fcg.Notifications.Idempotency;
+using Fcg.Notifications.Persistence;
 using MassTransit;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
+using MongoDB.Driver;
+
+// O driver 3.x não assume representação de Guid — sem isso, serializar payloads
+// com Guid (ex.: OrderId do PaymentProcessedEvent) falha com
+// "GuidRepresentation is Unspecified". Padrão UUID (Standard) é o recomendado.
+BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHealthChecks();
 
-// Store de idempotência dos consumers (dedup por chave natural do evento).
-// Em memória por enquanto; a versão durável (MongoDB, índice único) virá com a
-// issue de persistência.
-builder.Services.AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
+// MongoDB — histórico de notificações e chaves de idempotência. Config por
+// env vars (MongoDb__ConnectionString / MongoDb__Database), com default local.
+var mongoConnectionString = builder.Configuration["MongoDb:ConnectionString"] ?? "mongodb://localhost:27017";
+var mongoDatabase = builder.Configuration["MongoDb:Database"] ?? "notifications";
+
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoConnectionString));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(mongoDatabase));
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IMongoDatabase>().GetCollection<NotificationRecord>("notifications"));
+builder.Services.AddSingleton<INotificationRepository, NotificationRepository>();
+
+// Store de idempotência dos consumers (dedup por chave natural do evento),
+// agora DURÁVEL: MongoDB com índice único (messageType, naturalKey) —
+// sobrevive a restart e vale entre réplicas. A versão em memória
+// (InMemoryProcessedMessageStore) permanece disponível para testes.
+builder.Services.AddSingleton<MongoProcessedMessageStore>();
+builder.Services.AddSingleton<IProcessedMessageStore>(sp => sp.GetRequiredService<MongoProcessedMessageStore>());
 
 builder.Services.AddMassTransit(x =>
 {
@@ -31,6 +54,12 @@ builder.Services.AddMassTransit(x =>
 var app = builder.Build();
 
 app.MapHealthChecks("/health");
+
+// Garante o índice único de idempotência no startup (operação idempotente).
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<MongoProcessedMessageStore>().GarantirIndicesAsync();
+}
 
 app.Run();
 

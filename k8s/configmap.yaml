@@ -6,4 +6,5 @@ metadata:
     app: notifications-api
 data:
   RabbitMq__Host: "rabbitmq"
+  MongoDb__Database: "notifications"
   ASPNETCORE_ENVIRONMENT: "Production"

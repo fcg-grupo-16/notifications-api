@@ -57,7 +57,7 @@ Os contratos vivem em `src/Fcg.Notifications.Api/Contracts/Events.cs`, no namesp
 - **ASP.NET Core** (minimal hosting) — projeto único que hospeda os consumers e expõe apenas `/health`
 - **MassTransit 8.x** + **RabbitMQ** (mensageria pub/sub)
 - **xUnit** + **FluentAssertions** (testes de unidade)
-- **Sem banco de dados** — o serviço é stateless
+- **MongoDB** (`MongoDB.Driver`) — histórico de notificações (coleção `notifications`) e chaves de idempotência (coleção `processed_messages`, índice único)
 
 ---
 
@@ -125,6 +125,8 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
 | `RabbitMq__Host` | Host do RabbitMQ | `localhost` |
 | `RabbitMq__Username` | Usuário do RabbitMQ | `guest` |
 | `RabbitMq__Password` | Senha do RabbitMQ | `guest` |
+| `MongoDb__ConnectionString` | Connection string do MongoDB (histórico + idempotência) | `mongodb://localhost:27017` |
+| `MongoDb__Database` | Nome do database de notificações | `notifications` |
 | `ASPNETCORE_ENVIRONMENT` | Ambiente de execução (`Development` / `Production`) | — |
 | `ASPNETCORE_URLS` | URLs de escuta (definida no Dockerfile) | `http://+:8080` |
 

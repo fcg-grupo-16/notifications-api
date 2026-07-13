@@ -1,7 +1,9 @@
 using Fcg.Contracts.Events;
 using Fcg.Notifications.Email;
 using Fcg.Notifications.Idempotency;
+using Fcg.Notifications.Persistence;
 using MassTransit;
+using MongoDB.Bson;
 
 namespace Fcg.Notifications.Consumers;
 
@@ -9,16 +11,22 @@ namespace Fcg.Notifications.Consumers;
 /// Consome <see cref="UserCreatedEvent"/> e simula o envio de um e-mail de
 /// boas-vindas registrando a mensagem no console. Idempotente por
 /// <c>UserId</c>: reentregas do mesmo evento não geram e-mail duplicado.
+/// Cada envio é persistido como <see cref="NotificationRecord"/> para auditoria.
 /// </summary>
 public sealed class UserCreatedConsumer : IConsumer<UserCreatedEvent>
 {
     private readonly ILogger<UserCreatedConsumer> _logger;
     private readonly IProcessedMessageStore _store;
+    private readonly INotificationRepository _repository;
 
-    public UserCreatedConsumer(ILogger<UserCreatedConsumer> logger, IProcessedMessageStore store)
+    public UserCreatedConsumer(
+        ILogger<UserCreatedConsumer> logger,
+        IProcessedMessageStore store,
+        INotificationRepository repository)
     {
         _logger = logger;
         _store = store;
+        _repository = repository;
     }
 
     public async Task Consume(ConsumeContext<UserCreatedEvent> context)
@@ -36,5 +44,30 @@ public sealed class UserCreatedConsumer : IConsumer<UserCreatedEvent>
 
         var message = EmailMessageBuilder.BuildWelcomeMessage(context.Message);
         _logger.LogInformation("{Message}", message);
+
+        await SalvarHistoricoAsync(context);
+    }
+
+    // Best-effort: a falha na auditoria não deve reprocessar a mensagem — a chave
+    // de idempotência já foi consumida, então um retry não reenviaria o e-mail
+    // (só perderia o histórico do mesmo jeito). Logamos o erro e seguimos.
+    private async Task SalvarHistoricoAsync(ConsumeContext<UserCreatedEvent> context)
+    {
+        try
+        {
+            await _repository.SaveAsync(new NotificationRecord
+            {
+                Type = "Welcome",
+                Recipient = context.Message.Email,
+                Payload = context.Message.ToBsonDocument(),
+                Status = "Sent"
+            }, context.CancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Falha ao persistir histórico da notificação Welcome para UserId={UserId}.",
+                context.Message.UserId);
+        }
     }
 }
