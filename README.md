@@ -54,7 +54,7 @@ Os contratos vivem em `src/Fcg.Notifications.Api/Contracts/Events.cs`, no namesp
 ## 2. Stack
 
 - **.NET 10** (`net10.0`)
-- **ASP.NET Core** (minimal hosting) — projeto único que hospeda os consumers e expõe apenas `/health`
+- **ASP.NET Core** (minimal hosting) — projeto único que hospeda os consumers e expõe os health checks (`/health/live`, `/health/ready` e o agregado legado `/health`)
 - **MassTransit 8.x** + **RabbitMQ** (mensageria pub/sub)
 - **xUnit** + **FluentAssertions** (testes de unidade)
 - **Sem banco de dados** — o serviço é stateless
@@ -94,6 +94,13 @@ notifications-api/
 
 - **`Program.cs`** registra os dois consumers no MassTransit e configura a conexão com o RabbitMQ. Usa `KebabCaseEndpointNameFormatter("notifications", false)`, ou seja, as filas recebem o prefixo `notifications-` — isso garante filas **distintas por serviço**, então cada microsserviço recebe sua própria cópia do evento (fanout pub/sub, e não competing consumers).
 - **`UserCreatedConsumer`** e **`PaymentProcessedConsumer`** são finos de propósito: cada um recebe o evento e delega a construção da mensagem ao `EmailMessageBuilder`, escrevendo o resultado no log.
+
+> **Resiliência da mensageria:** os consumers usam retry imediato **exponencial** (3 tentativas) e,
+> esgotado, **delayed redelivery** com intervalos crescentes (60/300/900s) antes de a mensagem ir
+> para a fila `_error` do endpoint (dead-letter, ex.: `notifications-user-created-event_error`),
+> sem ser perdida. Os intervalos são configuráveis (`RabbitMq__ImmediateRetryCount`,
+> `RabbitMq__DelayedRedeliverySeconds`). O delayed redelivery usa o plugin
+> `rabbitmq_delayed_message_exchange`, já habilitado na imagem do RabbitMQ do orchestration.
 - **`EmailMessageBuilder`** é uma classe estática **pura** (sem dependências, sem efeitos colaterais), o que a torna fácil de testar isoladamente. Ela expõe:
   - `BuildWelcomeMessage(UserCreatedEvent)` — mensagem de boas-vindas.
   - `BuildPurchaseConfirmationMessage(PaymentProcessedEvent)` — confirmação quando aprovado; retorna `null` quando o status não é `Approved`.
@@ -125,6 +132,8 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
 | `RabbitMq__Host` | Host do RabbitMQ | `localhost` |
 | `RabbitMq__Username` | Usuário do RabbitMQ | `guest` |
 | `RabbitMq__Password` | Senha do RabbitMQ | `guest` |
+| `RabbitMq__ImmediateRetryCount` | Nº de tentativas do retry imediato (exponencial) nos consumers | `3` |
+| `RabbitMq__DelayedRedeliverySeconds` | Intervalos (s, separados por vírgula) do delayed redelivery | `60,300,900` |
 | `ASPNETCORE_ENVIRONMENT` | Ambiente de execução (`Development` / `Production`) | — |
 | `ASPNETCORE_URLS` | URLs de escuta (definida no Dockerfile) | `http://+:8080` |
 
@@ -144,12 +153,13 @@ A configuração usa o separador de **duplo sublinhado** (`__`) para mapear seç
    dotnet run --project src/Fcg.Notifications.Api
    ```
 
-   O serviço escuta em `http://localhost:8080` e expõe o health check em `/health`. Se o RabbitMQ não estiver em `localhost`, defina `RabbitMq__Host` antes de rodar.
+   O serviço escuta em `http://localhost:8080`. Health checks: `/health/live` (liveness — só o processo, sem dependências), `/health/ready` (readiness — inclui a checagem do RabbitMQ) e `/health` (agregado legado). Se o RabbitMQ não estiver em `localhost`, defina `RabbitMq__Host` antes de rodar.
 
 3. **Verifique a saúde:**
 
    ```bash
-   curl http://localhost:8080/health
+   curl http://localhost:8080/health/live    # processo de pé
+   curl http://localhost:8080/health/ready   # pronto para consumir (RabbitMQ acessível)
    ```
 
 4. **Veja os e-mails simulados.** Quando um `UserCreatedEvent` ou `PaymentProcessedEvent` chegar, o console exibirá linhas como:
