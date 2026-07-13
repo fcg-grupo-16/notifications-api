@@ -235,11 +235,17 @@ As mensagens `[E-mail] ...` aparecerão nesse log. Você também pode inspeciona
 dotnet test
 ```
 
-A suíte de testes de unidade cobre os **`EmailTemplates`**, validando:
+A suíte de testes cobre os **`EmailTemplates`**, validando:
 
 - O destinatário e o conteúdo do e-mail de boas-vindas.
 - Que a confirmação de compra é gerada quando o status é `Approved` (incluindo variações de caixa, ex.: `approved`).
 - Que nenhuma confirmação é gerada para outros status.
+
+E os **consumers**, via **MassTransit Test Harness** (transporte em memória, sem RabbitMQ real — `ConsumersHarnessTests`):
+
+- `UserCreatedEvent` gera o e-mail de boas-vindas (para o e-mail do usuário).
+- `PaymentProcessedEvent` gera confirmação **apenas** quando `Status == "Approved"`.
+- Reentrega do mesmo evento **não** duplica o e-mail (idempotência).
 
 Para build e teste em modo Release (como na CI):
 
