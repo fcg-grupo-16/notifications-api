@@ -7,25 +7,30 @@ namespace Fcg.Notifications.Consumers;
 
 /// <summary>
 /// Consome <see cref="PaymentProcessedEvent"/>. Se o pagamento foi aprovado,
-/// simula o envio de um e-mail de confirmação de compra registrando a mensagem
-/// no console; caso contrário, registra que nenhum e-mail será enviado.
-/// Idempotente por <c>OrderId</c> no caminho aprovado: reentregas do mesmo
-/// evento não geram confirmação duplicada.
+/// envia (via <see cref="IEmailSender"/>) um e-mail de confirmação de compra;
+/// caso contrário, apenas registra que nenhum e-mail será enviado. Idempotente
+/// por <c>OrderId</c> no caminho aprovado: reentregas do mesmo evento não geram
+/// confirmação duplicada.
 /// </summary>
 public sealed class PaymentProcessedConsumer : IConsumer<PaymentProcessedEvent>
 {
     private readonly ILogger<PaymentProcessedConsumer> _logger;
     private readonly IProcessedMessageStore _store;
+    private readonly IEmailSender _emailSender;
 
-    public PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> logger, IProcessedMessageStore store)
+    public PaymentProcessedConsumer(
+        ILogger<PaymentProcessedConsumer> logger,
+        IProcessedMessageStore store,
+        IEmailSender emailSender)
     {
         _logger = logger;
         _store = store;
+        _emailSender = emailSender;
     }
 
     public async Task Consume(ConsumeContext<PaymentProcessedEvent> context)
     {
-        var confirmation = EmailMessageBuilder.BuildPurchaseConfirmationMessage(context.Message);
+        var confirmation = EmailTemplates.PurchaseConfirmation(context.Message);
 
         if (confirmation is not null)
         {
@@ -43,11 +48,13 @@ public sealed class PaymentProcessedConsumer : IConsumer<PaymentProcessedEvent>
                 return;
             }
 
-            _logger.LogInformation("{Message}", confirmation);
+            await _emailSender.SendAsync(confirmation, context.CancellationToken);
         }
         else
         {
-            _logger.LogInformation("{Message}", EmailMessageBuilder.BuildRejectedMessage(context.Message));
+            _logger.LogInformation(
+                "[E-mail] Pagamento {Status} para o pedido {OrderId} (usuário {UserId}): nenhum e-mail de confirmação enviado.",
+                context.Message.Status, context.Message.OrderId, context.Message.UserId);
         }
     }
 }

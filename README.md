@@ -73,13 +73,16 @@ notifications-api/
 │       ├── Contracts/
 │       │   └── Events.cs                      # contratos compartilhados (Fcg.Contracts.Events)
 │       ├── Email/
-│       │   └── EmailMessageBuilder.cs         # helper puro que monta as mensagens (pt-BR)
+│       │   ├── EmailMessage.cs                # mensagem renderizada (destinatário/assunto/corpo)
+│       │   ├── EmailTemplates.cs              # templates puros que renderizam as mensagens (pt-BR)
+│       │   ├── IEmailSender.cs                # abstração de envio (plugável)
+│       │   └── LoggingEmailSender.cs          # sender padrão: "envia" registrando no log
 │       ├── Program.cs                         # bootstrap: MassTransit + RabbitMQ + /health
 │       ├── appsettings.json
 │       └── appsettings.Development.json
 ├── tests/
 │   └── Fcg.Notifications.UnitTests/
-│       └── EmailMessageBuilderTests.cs        # testa o EmailMessageBuilder
+│       └── EmailTemplatesTests.cs             # testa os templates de e-mail
 ├── k8s/                                       # manifests Kubernetes
 │   ├── configmap.yaml
 │   ├── secret.yaml
@@ -93,7 +96,7 @@ notifications-api/
 **Como as peças se conectam:**
 
 - **`Program.cs`** registra os dois consumers no MassTransit e configura a conexão com o RabbitMQ. Usa `KebabCaseEndpointNameFormatter("notifications", false)`, ou seja, as filas recebem o prefixo `notifications-` — isso garante filas **distintas por serviço**, então cada microsserviço recebe sua própria cópia do evento (fanout pub/sub, e não competing consumers).
-- **`UserCreatedConsumer`** e **`PaymentProcessedConsumer`** são finos de propósito: cada um recebe o evento e delega a construção da mensagem ao `EmailMessageBuilder`, escrevendo o resultado no log.
+- **`UserCreatedConsumer`** e **`PaymentProcessedConsumer`** são finos de propósito: cada um recebe o evento, renderiza a mensagem via `EmailTemplates` e a envia pelo `IEmailSender` (hoje o `LoggingEmailSender`, que simula o envio no log).
 
 > **Resiliência da mensageria:** os consumers usam retry imediato **exponencial** (3 tentativas) e,
 > esgotado, **delayed redelivery** com intervalos crescentes (60/300/900s) antes de a mensagem ir
@@ -101,10 +104,10 @@ notifications-api/
 > sem ser perdida. Os intervalos são configuráveis (`RabbitMq__ImmediateRetryCount`,
 > `RabbitMq__DelayedRedeliverySeconds`). O delayed redelivery usa o plugin
 > `rabbitmq_delayed_message_exchange`, já habilitado na imagem do RabbitMQ do orchestration.
-- **`EmailMessageBuilder`** é uma classe estática **pura** (sem dependências, sem efeitos colaterais), o que a torna fácil de testar isoladamente. Ela expõe:
-  - `BuildWelcomeMessage(UserCreatedEvent)` — mensagem de boas-vindas.
-  - `BuildPurchaseConfirmationMessage(PaymentProcessedEvent)` — confirmação quando aprovado; retorna `null` quando o status não é `Approved`.
-  - `BuildRejectedMessage(PaymentProcessedEvent)` — mensagem informando que nenhuma confirmação foi enviada.
+- **`EmailTemplates`** é uma classe estática **pura** (sem dependências, sem efeitos colaterais) que separa o **conteúdo** do **envio** — fácil de testar isoladamente. Expõe:
+  - `Welcome(UserCreatedEvent)` — e-mail de boas-vindas (`EmailMessage`).
+  - `PurchaseConfirmation(PaymentProcessedEvent)` — confirmação quando aprovado; retorna `null` quando o status não é `Approved`.
+- **`IEmailSender`** é a abstração **plugável** de envio; o `LoggingEmailSender` (padrão) "envia" registrando no log. Trocar por SMTP/provedor real é só registrar outra implementação no DI, sem tocar nos consumers.
 
 ---
 
@@ -232,12 +235,11 @@ As mensagens `[E-mail] ...` aparecerão nesse log. Você também pode inspeciona
 dotnet test
 ```
 
-A suíte de testes de unidade cobre o **`EmailMessageBuilder`**, validando:
+A suíte de testes de unidade cobre os **`EmailTemplates`**, validando:
 
-- O texto da mensagem de boas-vindas.
+- O destinatário e o conteúdo do e-mail de boas-vindas.
 - Que a confirmação de compra é gerada quando o status é `Approved` (incluindo variações de caixa, ex.: `approved`).
 - Que nenhuma confirmação é gerada para outros status.
-- O texto da mensagem de pagamento rejeitado.
 
 Para build e teste em modo Release (como na CI):
 

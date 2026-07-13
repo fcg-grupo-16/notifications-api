@@ -6,19 +6,24 @@ using MassTransit;
 namespace Fcg.Notifications.Consumers;
 
 /// <summary>
-/// Consome <see cref="UserCreatedEvent"/> e simula o envio de um e-mail de
-/// boas-vindas registrando a mensagem no console. Idempotente por
-/// <c>UserId</c>: reentregas do mesmo evento não geram e-mail duplicado.
+/// Consome <see cref="UserCreatedEvent"/> e envia (via <see cref="IEmailSender"/>)
+/// um e-mail de boas-vindas. Idempotente por <c>UserId</c>: reentregas do mesmo
+/// evento não geram e-mail duplicado.
 /// </summary>
 public sealed class UserCreatedConsumer : IConsumer<UserCreatedEvent>
 {
     private readonly ILogger<UserCreatedConsumer> _logger;
     private readonly IProcessedMessageStore _store;
+    private readonly IEmailSender _emailSender;
 
-    public UserCreatedConsumer(ILogger<UserCreatedConsumer> logger, IProcessedMessageStore store)
+    public UserCreatedConsumer(
+        ILogger<UserCreatedConsumer> logger,
+        IProcessedMessageStore store,
+        IEmailSender emailSender)
     {
         _logger = logger;
         _store = store;
+        _emailSender = emailSender;
     }
 
     public async Task Consume(ConsumeContext<UserCreatedEvent> context)
@@ -34,7 +39,6 @@ public sealed class UserCreatedConsumer : IConsumer<UserCreatedEvent>
             return;
         }
 
-        var message = EmailMessageBuilder.BuildWelcomeMessage(context.Message);
-        _logger.LogInformation("{Message}", message);
+        await _emailSender.SendAsync(EmailTemplates.Welcome(context.Message), context.CancellationToken);
     }
 }
