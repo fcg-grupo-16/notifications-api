@@ -2,7 +2,9 @@ using System.Globalization;
 using Fcg.Notifications.Consumers;
 using Fcg.Notifications.Email;
 using Fcg.Notifications.Idempotency;
+using Fcg.Notifications.Persistence;
 using MassTransit;
+using MongoDB.Driver;
 using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -61,16 +63,27 @@ builder.Services.AddHealthChecks()
             }
         },
         name: "rabbitmq",
-        tags: ["ready"]);
+        tags: ["ready"])
+    // Reusa o IMongoClient singleton do DI (resolvido em runtime) — sem abrir client extra.
+    .AddMongoDb(sp => sp.GetRequiredService<IMongoClient>(), name: "mongodb", tags: ["ready"]);
 
-// Store de idempotência dos consumers (dedup por chave natural do evento).
-// Em memória por enquanto; a versão durável (MongoDB, índice único) virá com a
-// issue de persistência.
+// Store de idempotência dos consumers (dedup por chave natural do evento). Em memória
+// (MVP); a versão durável em Mongo pode evoluir a partir daqui.
 builder.Services.AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
 
 // Envio de e-mail plugável. Hoje um sender que só registra no log (simulação);
 // trocável por SMTP/provedor real via DI, sem tocar nos consumers.
 builder.Services.AddSingleton<IEmailSender, LoggingEmailSender>();
+
+// MongoDB (notificationsdb) — histórico das notificações enviadas (auditoria/relatórios).
+// Config por ambiente (12-factor, convenção MongoDbSettings__* provisionada no orchestration),
+// com fallback local. database-per-service: instância Mongo compartilhada, database lógico próprio.
+var mongoConnectionString = builder.Configuration["MongoDbSettings:ConnectionString"]
+    ?? "mongodb://localhost:27017/?replicaSet=rs0";
+var mongoDatabaseName = builder.Configuration["MongoDbSettings:DatabaseName"] ?? "notificationsdb";
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoConnectionString));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(mongoDatabaseName));
+builder.Services.AddSingleton<INotificationHistoryStore, MongoNotificationHistoryStore>();
 
 builder.Services.AddMassTransit(x =>
 {
@@ -117,6 +130,24 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
 });
 
 app.MapHealthChecks("/health");
+
+// Consulta do histórico de notificações enviadas (auditoria/relatórios).
+app.MapGet("/api/v1/notificacoes", async (INotificationHistoryStore store, int? limit, CancellationToken ct) =>
+    Results.Ok(await store.GetRecentAsync(limit ?? 50, ct)));
+
+// Garante os índices da coleção no startup (best-effort — não derruba o serviço se o Mongo
+// estiver indisponível no boot; o initContainer wait-for-mongodb já mitiga isso no cluster).
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        await scope.ServiceProvider.GetRequiredService<INotificationHistoryStore>().GarantirIndicesAsync();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Falha ao garantir os índices do histórico de notificações no startup.");
+    }
+}
 
 app.Run();
 

@@ -2,6 +2,7 @@ using Fcg.Contracts.Events;
 using Fcg.Notifications.Consumers;
 using Fcg.Notifications.Email;
 using Fcg.Notifications.Idempotency;
+using Fcg.Notifications.Persistence;
 using FluentAssertions;
 using MassTransit;
 using MassTransit.Testing;
@@ -40,6 +41,7 @@ public class ConsumersHarnessTests
         new ServiceCollection()
             .AddSingleton<IEmailSender>(emailSender)
             .AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>()
+            .AddSingleton<INotificationHistoryStore, InMemoryNotificationHistoryStore>()
             .AddMassTransitTestHarness(x =>
             {
                 x.AddConsumer<UserCreatedConsumer>();
@@ -141,6 +143,38 @@ public class ConsumersHarnessTests
             email.Sent.Should().ContainSingle();
             email.Sent[0].To.Should().Be("u-1");
             email.Sent[0].Body.Should().Contain(orderId.ToString());
+        }
+        finally
+        {
+            await harness.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task UserCreated_deve_persistir_o_historico_da_notificacao()
+    {
+        var email = new RecordingEmailSender();
+        await using var provider = BuildHarness(email);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish(new UserCreatedEvent
+            {
+                UserId = "u-hist",
+                Nome = "Bea",
+                Email = "bea@exemplo.com"
+            });
+
+            await AguardarConsumidas<UserCreatedConsumer, UserCreatedEvent>(harness, 1);
+
+            var history = provider.GetRequiredService<INotificationHistoryStore>();
+            var registros = await history.GetRecentAsync(10);
+
+            registros.Should().ContainSingle();
+            registros[0].Type.Should().Be(nameof(UserCreatedEvent));
+            registros[0].Recipient.Should().Be("bea@exemplo.com");
+            registros[0].NaturalKey.Should().Be("u-hist");
         }
         finally
         {
