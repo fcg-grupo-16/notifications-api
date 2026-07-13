@@ -1,9 +1,15 @@
 using Fcg.Notifications.Consumers;
+using Fcg.Notifications.Idempotency;
 using MassTransit;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHealthChecks();
+
+// Store de idempotência dos consumers (dedup por chave natural do evento).
+// Em memória por enquanto; a versão durável (MongoDB, índice único) virá com a
+// issue de persistência.
+builder.Services.AddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
 
 builder.Services.AddMassTransit(x =>
 {
