@@ -1,8 +1,15 @@
 name: CI
 
+# ⚠️ REPOSITÓRIO DEPRECADO (Fase 3) — ver DEPRECATED.md.
+#
+# Sem deploy, não há razão para gastar runner a cada PUSH — esse gatilho saiu. O workflow NÃO foi
+# removido: um repo arquivado com CI deletado dá a impressão de que o código nunca foi testado.
+#
+# `pull_request` FICA, e não por descuido. `build-and-test` é check OBRIGATÓRIO na proteção da main
+# deste repo (com enforce_admins ligado): sem ele reportando, nenhum PR consegue ser mergeado — nem
+# este. E o custo é zero, porque repositório arquivado não aceita PR.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
   pull_request:
     branches: [main]
 
