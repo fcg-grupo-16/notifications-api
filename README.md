@@ -1,3 +1,29 @@
+> # ⚠️ REPOSITÓRIO DEPRECADO
+>
+> Este microsserviço foi **substituído** na **Fase 3** do Tech Challenge pela função serverless
+> **[`notifications-function`](https://github.com/fcg-grupo-16/notifications-function)**.
+>
+> **Por quê:** o serviço ficava ocioso quase todo o tempo, aguardando eventos, mas mantinha um
+> container rodando 24/7 — desperdício de recursos computacionais. A substituta é uma **Azure
+> Function** (isolated worker) acionada **diretamente** pelas filas do RabbitMQ
+> (`notifications-user-created` e `notifications-payment-processed`) e roda no Kubernetes com
+> **KEDA**, escalando **a zero** quando não há mensagem.
+>
+> **Este código não é mais implantado.** Ele foi removido do `docker-compose.yml` e dos manifestos
+> Kubernetes do repositório
+> [`orchestration`](https://github.com/fcg-grupo-16/orchestration).
+> Está mantido apenas como **registro histórico** da arquitetura da Fase 2 e como origem do port.
+>
+> | O que era aqui | Onde está agora |
+> |---|---|
+> | `Consumers/UserCreatedConsumer.cs` | `Functions/UserCreatedFunction.cs` (trigger RabbitMQ) |
+> | `Consumers/PaymentProcessedConsumer.cs` | `Functions/PaymentProcessedFunction.cs` |
+> | `Email/` (`IEmailSender`, `EmailTemplates`) | `Email/` — portado praticamente sem mudança |
+> | `Idempotency/InMemoryProcessedMessageStore.cs` | `Idempotency/RedisProcessedMessageStore.cs` — precisou virar **durável**: uma Function que escala a zero perde estado em memória a cada ciclo |
+> | `Persistence/MongoNotificationHistoryStore.cs` | `Persistence/` — portado (mesmo `notificationsdb`) |
+>
+> ---
+
 # NotificationsAPI — FIAP Cloud Games
 
 Microsserviço de notificações da plataforma **FIAP Cloud Games (FCG) — Fase 2**: consome eventos de outros serviços e simula o envio de e-mails (boas-vindas e confirmação de compra) registrando as mensagens no console.
